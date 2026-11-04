@@ -1,0 +1,4 @@
+# Tooling / OS
+.playwright-mcp/
+.DS_Store
+Thumbs.db
