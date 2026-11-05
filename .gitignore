@@ -7,3 +7,9 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Firebase: the app config holds a Google API key (GitHub push protection flags it);
+# the Admin SDK service-account key is a secret and lives only on the server
+google-services.json
+*firebase-adminsdk*.json
+firebase-key.json
