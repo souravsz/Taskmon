@@ -1,6 +1,7 @@
 # Import every model here so Base.metadata is complete for Alembic autogenerate.
 from app.models.action_history import ActionHistory
 from app.models.conversation import Conversation
+from app.models.device_token import DeviceToken
 from app.models.expense import Expense
 from app.models.message import Message, MessageRole
 from app.models.note import Note
@@ -13,6 +14,7 @@ from app.models.user_detail import UserDetail
 __all__ = [
     "ActionHistory",
     "Conversation",
+    "DeviceToken",
     "Expense",
     "Message",
     "MessageRole",

@@ -9,3 +9,6 @@ pydantic-settings==2.16.2
 pyjwt==2.15.1
 groq==1.7.0
 tzdata==2026.6  # timezone database (Windows has none built in)
+# Push notifications: Firebase service-account sign-in and FCM HTTP v1 calls (app/services/push_service.py)
+google-auth==2.62.1
+requests==2.34.2

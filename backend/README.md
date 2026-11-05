@@ -7,6 +7,7 @@ FastAPI backend for TaskMon: mobile-number OTP login and user profiles, on MySQL
 ```
 app/
 ├── main.py              # App factory: middleware, error handlers, routers
+├── worker.py            # Reminder worker: sends a push for each due reminder (python -m app.worker)
 ├── api/
 │   ├── deps.py          # Shared dependencies (DB session, current user, OTP provider)
 │   ├── router.py        # Aggregates v1 routers
@@ -71,6 +72,8 @@ API docs are at http://localhost:8000/docs (set `DOCS_ENABLED=false` to hide the
 | GET | `/api/v1/users/me` | Bearer | Current user |
 | PUT | `/api/v1/users/me/username` | Bearer | Set the username (409 `username_taken` if taken) |
 | POST | `/api/v1/chat` | Bearer | Chat engine: understands the message and acts on reminders, expenses and notes |
+| POST | `/api/v1/devices` | Bearer | Save this phone's FCM token `{"token", "platform"}` (204) |
+| POST | `/api/v1/devices/unregister` | Bearer | Remove it on logout `{"token"}` (204) |
 | GET | `/health` | | Liveness |
 | GET | `/health/ready` | | Readiness (503 if the DB is unreachable) |
 
@@ -97,6 +100,30 @@ and, with `CHAT_DEBUG=true`, `debug`: every step the engine took (also logged at
 A retry with the same `client_message_id` returns the stored reply instead of acting twice. Pending
 questions expire after `PENDING_ACTION_MINUTES`.
 
+## Push notifications (reminders)
+
+The database is the schedule. A reminder is a row in `notification_tasks`; creating, moving, cancelling
+or deleting it only changes that row. `app/worker.py` runs separately and, every
+`WORKER_INTERVAL_SECONDS` (30):
+
+1. Picks open reminders whose `notify_at` has passed, checked in each user's timezone (`notify_at` is
+   stored in local time). Rows are locked with `SKIP LOCKED`, so two workers never send the same one.
+2. Sends an FCM push to each of the user's phones (`device_tokens`), through the FCM HTTP v1 API.
+3. One-off: marks it `is_notified`. Repeating: moves `notify_at` to the next occurrence.
+4. Deletes tokens FCM reports as dead. If FCM is down and nothing was delivered, the reminder stays due
+   and the next run tries again. A reminder found more than an hour late (worker was down) is marked done
+   without a push.
+
+Every step is logged (`reminder=… user=… phones=… sent=… dead=… failed=…`).
+
+The worker needs `FIREBASE_CREDENTIALS_FILE`: the Firebase Admin SDK service-account JSON (Firebase console
+→ Project settings → Service accounts → Generate new private key). It is a secret: never commit it or copy
+it into the image. The API itself doesn't need it.
+
+```bash
+python -m app.worker     # locally, with FIREBASE_CREDENTIALS_FILE set in .env
+```
+
 ## Database tables
 
 | Table | Purpose |
@@ -108,6 +135,7 @@ questions expire after `PENDING_ACTION_MINUTES`.
 | `notes` | Title and content |
 | `expenses` | `amount`, `category`, `spent_at` (indexed by user and date) |
 | `notification_tasks` | Reminders: `notify_at`, `is_notified`, `notified_at`, `is_completed`, `is_cancelled`, `recurrence` |
+| `device_tokens` | Each phone's FCM token (unique), for reminder pushes |
 | `pending_actions` | Chat actions waiting for info, a choice or a confirmation |
 | `action_history` | Audit log of chat changes with before/after snapshots (undo, duplicate detection) |
 
@@ -134,7 +162,16 @@ ruff check . && ruff format --check .
 docker build -t taskmon-api .
 docker run --rm --env-file .env taskmon-api alembic upgrade head
 docker run -p 8000:8000 --env-file .env taskmon-api
+
+# reminder worker: same image, different command; the Firebase key is mounted read-only
+docker run -d --name taskmon-worker --no-healthcheck --env-file .env \
+  -v /path/to/firebase-key.json:/run/secrets/firebase-key.json:ro \
+  taskmon-api python -m app.worker
 ```
+
+With `FIREBASE_CREDENTIALS_FILE=/run/secrets/firebase-key.json` in `.env`. `--no-healthcheck` because the
+image's health check calls the API's `/health`, which the worker doesn't serve. The container runs as
+uid 10001, so the key file on the host must be readable by that uid.
 
 Secrets are never baked into the image: `.dockerignore` excludes `.env`, and values come from
 `--env-file` at run time. On the server, keep the production `.env` next to the checkout (it is gitignored)

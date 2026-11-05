@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     PENDING_ACTION_MINUTES: int = 15
     DEFAULT_TIMEZONE: str = "Asia/Kolkata"
 
+    # Push notifications (reminder worker): path to the Firebase Admin SDK service-account JSON.
+    # Mounted into the worker container at run time; never committed or baked into the image.
+    FIREBASE_CREDENTIALS_FILE: str = ""
+    WORKER_INTERVAL_SECONDS: int = 30  # how often the worker looks for due reminders
+
     # CORS: comma-separated list of allowed frontend origins
     CORS_ORIGINS: str = "http://localhost:5173"
 
