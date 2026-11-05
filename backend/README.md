@@ -20,6 +20,20 @@ app/
 │   ├── exceptions.py    # AppError hierarchy and HTTP error mapping
 │   ├── logging.py       # Text or JSON logs with request ids
 │   └── middleware.py    # X-Request-ID and access logging
+├── ai/
+│   ├── groq_client.py       # One AsyncGroq client; timeouts, retries, rate limits → friendly errors
+│   ├── prompts.py           # Classifier prompt (+ insights tip prompt)
+│   ├── schemas.py           # Pydantic schema every Groq reply is validated against
+│   ├── intent_catalogue.py  # Every supported intent, its fields and examples
+│   ├── intent_classifier.py # One Groq call per message → validated ClassifierResult
+│   └── response_generator.py# Records → card rows / text (₹, "Tomorrow · 8:00 PM")
+├── conversation/
+│   ├── manager.py           # Entry point: context → classify → route → save → commit
+│   ├── context.py           # Turn state, debug trace, CONTEXT sent to Groq
+│   ├── pending_actions.py   # Questions waiting for info / a pick / a yes (stored in MySQL)
+│   ├── action_handler.py    # Validate → find target → confirm → run service → history; undo
+│   ├── query_handler.py     # Lists, totals, comparison, insights (SQL + Decimal)
+│   └── conversation_handler.py # Small talk, clarification, fallback
 ├── database/
 │   ├── base.py          # Declarative Base with constraint naming convention
 │   └── connection.py    # Engine, session factory, get_db
@@ -56,10 +70,32 @@ API docs are at http://localhost:8000/docs (set `DOCS_ENABLED=false` to hide the
 | POST | `/api/v1/auth/verify-otp` | | Returns `access_token`, `expires_in`, `has_username`, `user` |
 | GET | `/api/v1/users/me` | Bearer | Current user |
 | PUT | `/api/v1/users/me/username` | Bearer | Set the username (409 `username_taken` if taken) |
+| POST | `/api/v1/chat` | Bearer | Chat engine: understands the message and acts on reminders, expenses and notes |
 | GET | `/health` | | Liveness |
 | GET | `/health/ready` | | Readiness (503 if the DB is unreachable) |
 
 Mobile numbers are normalised to E.164: `9876543210`, `919876543210` and `+91 98765-43210` all become `+919876543210`.
+
+## AI chat (Groq)
+
+Put your key in `.env` as `GROQ_API_KEY` (optionally `GROQ_MODEL`, `GROQ_REASONING_EFFORT`). The key stays on the server.
+
+`POST /api/v1/chat` with `{"message": "...", "conversation_id": 12, "client_message_id": "<uuid>"}`:
+
+1. Loads the conversation, the open pending action (if any), the records last shown, the last change and
+   the user's saved details, plus the last 6 messages.
+2. Groq classifies the message once (ACTION / QUERY / CLARIFICATION / CONVERSATION / FALLBACK) and extracts
+   intents and fields. The reply is validated with Pydantic; unknown intents are dropped.
+3. FastAPI validates every value (dates, times, amounts), asks for anything missing, finds the target record
+   (only the user's own), asks "which one?" or "are you sure?" when needed, runs the service and writes
+   `action_history`. All figures are calculated in SQL / `Decimal`.
+4. Both messages are saved and the turn is committed in one transaction (rolled back on any error).
+
+The reply has `text`, `parts` (text + optional card of records), `pending` (`info` / `select` / `confirm`)
+and, with `CHAT_DEBUG=true`, `debug`: every step the engine took (also logged at INFO).
+
+A retry with the same `client_message_id` returns the stored reply instead of acting twice. Pending
+questions expire after `PENDING_ACTION_MINUTES`.
 
 ## Database tables
 
