@@ -53,6 +53,13 @@
       [
         "./plugins/withCmakeVersion",
         "3.31.6"
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "TaskMon uses the microphone to turn your voice into a message.",
+          "speechRecognitionPermission": "TaskMon uses speech recognition to turn your voice into a message."
+        }
       ]
     ]
   }
