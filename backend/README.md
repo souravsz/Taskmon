@@ -72,6 +72,9 @@ API docs are at http://localhost:8000/docs (set `DOCS_ENABLED=false` to hide the
 | GET | `/api/v1/users/me` | Bearer | Current user |
 | PUT | `/api/v1/users/me/username` | Bearer | Set the username (409 `username_taken` if taken) |
 | POST | `/api/v1/chat` | Bearer | Chat engine: understands the message and acts on reminders, expenses and notes |
+| PUT | `/api/v1/users/me/daily-budget` | Bearer | Set the daily budget `{"daily_budget": 500}` (asked at every login) |
+| POST | `/api/v1/sms/bank` | Bearer | A bank SMS `{"text"}` → expense; warning push if the day's budget is passed |
+| POST | `/api/v1/reminders/{id}/complete` | Bearer | Mark a reminder done (the notification's Done button) (204) |
 | POST | `/api/v1/devices` | Bearer | Save this phone's FCM token `{"token", "platform"}` (204) |
 | POST | `/api/v1/devices/unregister` | Bearer | Remove it on logout `{"token"}` (204) |
 | GET | `/health` | | Liveness |
@@ -124,6 +127,23 @@ it into the image. The API itself doesn't need it.
 python -m app.worker     # locally, with FIREBASE_CREDENTIALS_FILE set in .env
 ```
 
+## Bank SMS → expenses, daily budget
+
+The Android app's native receiver (`mobile-app/modules/bank-sms`) sees every incoming SMS, even when the
+app is closed, and forwards only Federal Bank debit alerts to `POST /api/v1/sms/bank`. Other messages
+never leave the phone. `services/sms_service.py` reads exactly this format:
+
+```
+Debited Rs 50.00 from a/c X9844 on 04Nov26 12:57 via UPI to SAFIYA HASSA. Ref 630830086298. Bal Rs 407.64. ... -Federal Bank
+```
+
+→ an expense of ₹50.00 on 2026-11-04 12:57, category `Misc`, description
+`UPI to SAFIYA HASSA · Federal Bank X9844`, `reference` 630830086298. The same reference is never recorded
+twice. If that day's total is now over the user's daily budget (`users.expense_limit`, set at every login),
+the API sends a "Daily budget exceeded" push to the user's phones. So the **API container needs the
+Firebase key too** (same mount as the worker). Without it the expense is still saved and the failure is
+logged.
+
 ## Database tables
 
 | Table | Purpose |
@@ -169,7 +189,8 @@ docker run -d --name taskmon-worker --no-healthcheck --env-file .env \
   taskmon-api python -m app.worker
 ```
 
-With `FIREBASE_CREDENTIALS_FILE=/run/secrets/firebase-key.json` in `.env`. `--no-healthcheck` because the
+Mount the same key into the API container as well (`-v ...:/run/secrets/firebase-key.json:ro`): it sends
+the daily budget warning. With `FIREBASE_CREDENTIALS_FILE=/run/secrets/firebase-key.json` in `.env`. `--no-healthcheck` because the
 image's health check calls the API's `/health`, which the worker doesn't serve. The container runs as
 uid 10001, so the key file on the host must be readable by that uid.
 

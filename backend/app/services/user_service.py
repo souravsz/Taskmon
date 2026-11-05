@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -49,5 +51,13 @@ def set_username(db: Session, user: User, username: str) -> User:
         # Lost a race on the unique constraint (or a case-insensitive collation match).
         db.rollback()
         raise UsernameTakenError() from exc
+    db.refresh(user)
+    return user
+
+
+def set_daily_budget(db: Session, user: User, amount: Decimal) -> User:
+    """Asked after every login; bank SMS debits past it send a warning push."""
+    user.expense_limit = amount
+    db.commit()
     db.refresh(user)
     return user
