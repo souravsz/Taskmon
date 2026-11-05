@@ -63,9 +63,12 @@ target {{"ref": "last_action"}}.
 6. "pending" says how the message relates to CONTEXT.pending_action ("none" if there is none):
    - "answer": supplies the missing info or changes collected info → operations[0] uses the pending intent \
 with only the new values in "data" (or "target").
-   - "select": picks one of pending_action.candidates → fill "selection" (position or title text).
+   - "select": picks one of pending_action.candidates → fill "selection" (position or title text) \
+("1. Call Rahul" → position 1).
    - "confirm" / "deny": yes / no to pending_action.question.
    - "cancel": abandons it ("forget it", "never mind", "leave it").
+   For select, confirm, deny and cancel, do NOT repeat the pending operation in "operations": the backend \
+already has it. "operations" holds only new, different requests made in the same message.
    - "none": unrelated message (a new request or a topic change). An unrelated question while a reminder time \
 is pending ("Explain FastAPI dependency injection") is FALLBACK with pending "none".
 7. QUERY filters go in "data". get_note_details and search_* put the search words in data.text.

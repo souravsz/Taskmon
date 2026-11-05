@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.intent_catalogue import INTENTS
 from app.ai.intent_classifier import classify
-from app.ai.schemas import ClassifierResult, Operation
+from app.ai.schemas import ClassifierResult, Operation, Selection
 from app.conversation import conversation_handler, pending_actions
 from app.conversation.action_handler import new_state, run_operation
 from app.conversation.context import (
@@ -139,8 +139,12 @@ async def route(
     if pending is not None and result.pending != "none":
         turn.step("route.pending_reply", reply=result.pending, pending_id=pending.id)
         await continue_pending(turn, pending, result, last_prompt_id)
-        # anything else asked in the same message ("yes, and add ₹50 for coffee")
-        extra = result.operations[1:] if result.pending == "answer" else result.operations
+        # anything else asked in the same message ("yes, and add ₹50 for coffee"). Groq often repeats the
+        # pending operation itself next to a pick or a yes; running that again would ask the same question.
+        ops = result.operations[1:] if result.pending == "answer" else result.operations
+        extra = [op for op in ops if result.pending == "answer" or op.intent != pending.intent]
+        if len(extra) < len(ops):
+            turn.step("pending.echo_ignored", intent=pending.intent)
         for op in extra:
             await run_operation(turn, new_state(op))
         return
@@ -201,8 +205,13 @@ async def continue_pending(
         await run_operation(turn, state)
 
     elif reply == "select":
-        picked = pending_actions.match_candidate(pending, result.selection)
-        turn.step("pending.select", selection=result.selection.model_dump(), picked=picked)
+        selection = result.selection
+        # Groq sometimes leaves "selection" empty and puts the pick in a repeated operation's target instead
+        echoed = next((op for op in result.operations if op.intent == pending.intent), None)
+        if not (selection.position or selection.text) and echoed:
+            selection = Selection(position=echoed.target.position, text=echoed.target.text)
+        picked = pending_actions.match_candidate(pending, selection)
+        turn.step("pending.select", selection=selection.model_dump(), picked=picked)
         if pending.status != PendingStatus.WAITING_FOR_TARGET_SELECTION or picked is None:
             reask(turn, pending, prefix="I didn't catch which one. " if picked is None else "")
             return

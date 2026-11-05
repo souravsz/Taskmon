@@ -5,6 +5,7 @@
      "confirmed": bool, "duplicate_ok": bool, "queue": [other operations waiting their turn]}
 """
 
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -122,10 +123,20 @@ def close(turn: Turn, pending: PendingAction, status: PendingStatus, reason: str
 def match_candidate(pending: PendingAction, selection: Selection) -> dict[str, Any] | None:
     """The candidate the user picked, by number or by title words."""
     candidates = pending.candidates or []
-    if selection.position and 1 <= selection.position <= len(candidates):
-        return candidates[selection.position - 1]
+    position = selection.position
+    # A tapped row sends "1. Call Rahul": the number decides
+    numbered = re.match(r"\s*(\d+)[.)]\s", selection.text or "")
+    if not position and numbered:
+        position = int(numbered.group(1))
+    if position and 1 <= position <= len(candidates):
+        return candidates[position - 1]
     if selection.text:
-        words = selection.text.lower().split()
+        text = selection.text.lower().strip()
+        # "Call Rahul" picks "Call Rahul" even though "Call Rahul's mom" also contains those words
+        exact = [c for c in candidates if c["title"].lower() == text]
+        if len(exact) == 1:
+            return exact[0]
+        words = text.split()
         matches = [c for c in candidates if all(w in f"{c['title']} {c['subtitle']}".lower() for w in words)]
         if len(matches) == 1:
             return matches[0]

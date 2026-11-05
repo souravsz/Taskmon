@@ -227,6 +227,35 @@ def test_multiple_matches_ask_to_pick_one(chat: Chat, db_session: Session) -> No
     assert (team.is_cancelled, client.is_cancelled) == (False, True)
 
 
+def test_tapped_pick_echoed_by_groq_deletes_after_one_confirm(chat: Chat, db_session: Session) -> None:
+    """Real Groq output: the tapped "1. Call Rahul" came back with an empty selection and the delete repeated
+    in operations. That used to ask "Which one?" again and again."""
+    add_reminder(db_session, "Call Rahul", at(TOMORROW, 20))
+    add_reminder(db_session, "Call Rahul's mom", at(TOMORROW, 18))
+    delete = op("delete_reminder", text="Rahul")
+
+    reply = chat.send("Delete my Rahul reminder", result("ACTION", delete))
+    assert reply["pending"]["kind"] == "select"
+
+    echoed = op("delete_reminder", text="Call Rahul")
+    reply = chat.send("1. Call Rahul", result("ACTION", echoed, pending="select"))
+    assert reply["pending"]["kind"] == "confirm"
+    assert "“Call Rahul”" in reply["text"] and "come back to the rest" not in reply["text"]
+
+    reply = chat.send("Yes", result("ACTION", delete, pending="confirm"))  # delete repeated again
+    assert reply["pending"] is None
+    assert [r.title for r in rows(db_session, NotificationTask)] == ["Call Rahul's mom"]
+
+
+def test_pick_by_exact_title_when_another_title_contains_it(chat: Chat, db_session: Session) -> None:
+    add_reminder(db_session, "Call Rahul", at(TOMORROW, 20))
+    add_reminder(db_session, "Call Rahul's mom", at(TOMORROW, 18))
+    chat.send("Cancel my Rahul reminder", result("ACTION", op("cancel_reminder", text="Rahul")))
+    chat.send("Call Rahul", result("ACTION", pending="select", selection={"text": "Call Rahul"}))
+    rahul, mom = rows(db_session, NotificationTask)
+    assert (rahul.is_cancelled, mom.is_cancelled) == (True, False)
+
+
 def test_not_found(chat: Chat, db_session: Session) -> None:
     add_reminder(db_session, "Team meeting", at(TOMORROW, 10))
     reply = chat.send("Cancel my gym reminder", result("ACTION", op("cancel_reminder", text="gym")))
