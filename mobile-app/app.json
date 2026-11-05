@@ -14,6 +14,7 @@
     "android": {
       "package": "in.aakri.taskmon",
       "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#FBF8F3",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,6 +25,14 @@
     "plugins": [
       "expo-secure-store",
       "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#FC9252",
+          "defaultChannel": "reminders"
+        }
+      ],
       [
         "expo-splash-screen",
         {

@@ -2,6 +2,8 @@ import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { authApi } from '../api/auth';
+import { devicesApi } from '../api/devices';
+import { getCurrentPushToken } from './usePushNotifications';
 
 const KEYS = { token: 'taskmon-token', name: 'taskmon-name', mobile: 'taskmon-mobile' } as const;
 
@@ -80,7 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [state.token, update],
   );
 
-  const logout = useCallback(() => update({ token: null, name: null, mobile: null }), [update]);
+  const logout = useCallback(() => {
+    // Stop this phone getting the user's reminders. Best effort: logout never waits on the network.
+    const pushToken = getCurrentPushToken();
+    if (state.token && pushToken) devicesApi.unregister(state.token, pushToken).catch(() => {});
+    update({ token: null, name: null, mobile: null });
+  }, [state.token, update]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
