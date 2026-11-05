@@ -4,6 +4,7 @@ Signs in with the Firebase Admin SDK service-account key (FIREBASE_CREDENTIALS_F
 fetches and refreshes the access token.
 """
 
+import json
 import logging
 from functools import lru_cache
 from typing import Literal
@@ -42,16 +43,18 @@ def check_credentials() -> None:
     _fcm()
 
 
-def send(token: str, title: str, body: str, data: dict[str, str]) -> SendResult:
+def send(token: str, title: str, text: str, data: dict[str, str], category: str | None = None) -> SendResult:
+    """Sends a data-only message; the app's expo-notifications draws the notification itself, which is
+    what lets it add action buttons (`category`, e.g. "reminder" → a Done button).
+
+    Keys are the ones expo-notifications reads on Android: title, message, channelId, categoryId, and
+    body (a JSON string that becomes the notification's `data` in the app)."""
     session, url = _fcm()
-    message = {
-        "message": {
-            "token": token,
-            "notification": {"title": title, "body": body},
-            "data": data,  # values must be strings
-            "android": {"priority": "high", "notification": {"channel_id": CHANNEL_ID}},
-        }
-    }
+    payload = {"title": title, "message": text, "channelId": CHANNEL_ID, "body": json.dumps(data)}
+    if category:
+        payload["categoryId"] = category
+    # high priority: delivered at once and wakes the app to show it, even when it's closed
+    message = {"message": {"token": token, "data": payload, "android": {"priority": "high"}}}
     try:
         res = session.post(url, json=message, timeout=TIMEOUT_SECONDS)
     except requests.RequestException as exc:

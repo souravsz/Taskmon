@@ -23,11 +23,13 @@ class FakePush:
     """Stands in for push_service.send: records each push and answers with a preset result per token."""
 
     def __init__(self) -> None:
-        self.sent: list[tuple[str, str, str, dict[str, str]]] = []
+        self.sent: list[tuple[str, str, str, dict[str, str], str | None]] = []
         self.results: dict[str, str] = {}
 
-    def __call__(self, token: str, title: str, body: str, data: dict[str, str]) -> str:
-        self.sent.append((token, title, body, data))
+    def __call__(
+        self, token: str, title: str, text: str, data: dict[str, str], category: str | None = None
+    ) -> str:
+        self.sent.append((token, title, text, data, category))
         return self.results.get(token, "sent")
 
 
@@ -87,6 +89,27 @@ def test_phone_moves_to_the_account_that_logs_in(client: TestClient, db_session:
     assert device.user_id == bob["user"]["id"]
 
 
+def test_done_button_completes_the_reminder(client: TestClient, db_session: Session) -> None:
+    me = login(client)
+    user = db_session.get(User, me["user"]["id"])
+    assert user is not None
+    reminder = add_reminder(db_session, user, LOCAL_NOW)
+
+    url = f"{API}/reminders/{reminder.id}/complete"
+    assert client.post(url, headers=auth_header(me["access_token"])).status_code == 204
+    db_session.refresh(reminder)
+    assert reminder.is_completed
+
+
+def test_cannot_complete_someone_elses_reminder(client: TestClient, db_session: Session) -> None:
+    other = add_reminder(db_session, add_user(db_session, "+919000000001"), LOCAL_NOW)
+    token = login(client)["access_token"]
+    res = client.post(f"{API}/reminders/{other.id}/complete", headers=auth_header(token))
+    assert res.status_code == 404
+    db_session.refresh(other)
+    assert not other.is_completed
+
+
 def test_device_endpoints_need_login_and_a_token(client: TestClient) -> None:
     assert client.post(f"{API}/devices", json={"token": "x"}).status_code == 401
     token = login(client)["access_token"]
@@ -102,9 +125,8 @@ def test_due_reminder_is_pushed_and_marked_done(db_session: Session, push: FakeP
     reminder = add_reminder(db_session, user, LOCAL_NOW)
 
     assert worker.run_once(db_session, NOW_UTC) == 1
-    assert push.sent == [
-        ("phone-1", "Call Rahul", "Reminder · 3:30 PM", {"type": "reminder", "reminder_id": str(reminder.id)})
-    ]
+    data = {"type": "reminder", "reminder_id": str(reminder.id)}
+    assert push.sent == [("phone-1", "Call Rahul", "Reminder · 3:30 PM", data, "reminder")]  # with Done
     assert reminder.is_notified and reminder.notified_at == LOCAL_NOW
     assert worker.run_once(db_session, NOW_UTC) == 0  # not sent twice
 
@@ -126,7 +148,8 @@ def test_daily_reminder_moves_to_tomorrow(db_session: Session, push: FakePush) -
     reminder = add_reminder(db_session, user, LOCAL_NOW, recurrence="daily")
 
     worker.run_once(db_session, NOW_UTC)
-    assert len(push.sent) == 1
+    [(*_, category)] = push.sent
+    assert category is None  # no Done button: it would stop every future repeat
     assert reminder.notify_at == datetime(2026, 11, 6, 15, 30)
     assert not reminder.is_notified  # stays open for the next repeat
 
@@ -229,16 +252,29 @@ def test_fcm_replies(monkeypatch: pytest.MonkeyPatch, status: int, text: str, ex
     assert push_service.send("tok", "Call Rahul", "Reminder · 3:30 PM", {"type": "reminder"}) == expected
 
 
-def test_fcm_message_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fcm_message_is_data_only_with_the_done_category(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Data-only, so the app's expo-notifications draws it and can add the Done button."""
     session = FakeSession()
     monkeypatch.setattr(push_service, "_fcm", lambda: (session, "https://fcm/send"))
-    push_service.send("tok", "Call Rahul", "Reminder · 3:30 PM", {"reminder_id": "7"})
+    push_service.send("tok", "Call Rahul", "Reminder · 3:30 PM", {"reminder_id": "7"}, "reminder")
     assert session.posted["json"]["message"] == {
         "token": "tok",
-        "notification": {"title": "Call Rahul", "body": "Reminder · 3:30 PM"},
-        "data": {"reminder_id": "7"},
-        "android": {"priority": "high", "notification": {"channel_id": "reminders"}},
+        "data": {
+            "title": "Call Rahul",
+            "message": "Reminder · 3:30 PM",
+            "channelId": "reminders",
+            "body": '{"reminder_id": "7"}',
+            "categoryId": "reminder",
+        },
+        "android": {"priority": "high"},
     }
+
+
+def test_fcm_message_without_a_category_has_no_buttons(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FakeSession()
+    monkeypatch.setattr(push_service, "_fcm", lambda: (session, "https://fcm/send"))
+    push_service.send("tok", "Exercise", "Reminder · 8:00 AM", {})
+    assert "categoryId" not in session.posted["json"]["message"]["data"]
 
 
 def test_fcm_unreachable_is_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:

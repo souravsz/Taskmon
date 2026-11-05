@@ -80,6 +80,15 @@ def find(
     return rows[:limit]
 
 
+def get_for_user(db: Session, user_id: int, reminder_id: int) -> NotificationTask | None:
+    """The reminder, only if it belongs to this user."""
+    return db.scalar(
+        select(NotificationTask).where(
+            NotificationTask.id == reminder_id, NotificationTask.user_id == user_id
+        )
+    )
+
+
 def latest(db: Session, user_id: int) -> NotificationTask | None:
     return db.scalar(
         select(NotificationTask)

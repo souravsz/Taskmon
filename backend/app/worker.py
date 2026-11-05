@@ -76,11 +76,11 @@ def notify(db: Session, reminder: NotificationTask, now: datetime) -> None:
         logger.info("reminder=%s user=%s skipped: %s late", reminder.id, reminder.user_id, late)
     else:
         tokens = device_service.tokens_for_user(db, reminder.user_id)
+        text = f"Reminder · {clock(reminder.notify_at)}"
         data = {"type": "reminder", "reminder_id": str(reminder.id)}
-        results = {
-            token: push_service.send(token, reminder.title, f"Reminder · {clock(reminder.notify_at)}", data)
-            for token in tokens
-        }
+        # One-off reminders get a Done button. Repeating ones don't: "done" would stop every future repeat.
+        category = None if reminder.recurrence else "reminder"
+        results = {token: push_service.send(token, reminder.title, text, data, category) for token in tokens}
         dead = [token for token, result in results.items() if result == "dead"]
         device_service.delete_tokens(db, dead)
         logger.info(
