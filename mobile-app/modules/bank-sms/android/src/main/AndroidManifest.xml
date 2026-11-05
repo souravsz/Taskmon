@@ -1,0 +1,23 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.RECEIVE_SMS" />
+  <!-- Reading the inbox on app open: catches bank SMS missed while offline -->
+  <uses-permission android:name="android.permission.READ_SMS" />
+
+  <application>
+    <!-- Android delivers every incoming SMS here, even when the app is closed -->
+    <receiver
+      android:name="expo.modules.banksms.BankSmsReceiver"
+      android:exported="true"
+      android:permission="android.permission.BROADCAST_SMS">
+      <intent-filter>
+        <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- Runs the JS task "TaskMonBankSms" (registered in index.ts) for a bank debit SMS -->
+    <service
+      android:name="expo.modules.banksms.BankSmsTaskService"
+      android:exported="false" />
+  </application>
+</manifest>

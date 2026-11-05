@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BackHandler, Text, useWindowDimensions, View, type TextInputInstance } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { authApi } from '../api/auth';
 import { ApiError } from '../api/client';
 import { Mascot } from '../components/brand/Mascot';
 import { AppHeader } from '../components/layout/AppHeader';
@@ -16,16 +17,19 @@ import { FormMessage, StepIntro } from '../components/login/StepIntro';
 import { COUNTRY_CODE, useAuth } from '../hooks/useAuth';
 import { useCountdown } from '../hooks/useCountdown';
 import { FadeUp } from '../theme/animations';
+import { askSmsPermission } from '../utils/bankSms';
 import { clampVw, tokens as tm } from '../theme/tokens';
 
-type Step = 'phone' | 'otp' | 'name';
-const STEPS: Step[] = ['phone', 'otp', 'name'];
+type Step = 'phone' | 'otp' | 'name' | 'budget';
+const STEPS: Step[] = ['phone', 'otp', 'name', 'budget'];
 
 const OTP_LENGTH = Number(process.env.EXPO_PUBLIC_OTP_LENGTH) || 4;
 const DEMO_OTP = process.env.EXPO_PUBLIC_DEMO_OTP;
 const RESEND_SECONDS = 30;
 /** Mirrors the backend's username rule. */
 const NAME_PATTERN = /^[A-Za-z0-9_]{3,30}$/;
+/** Whole rupees or rupees.paise, within the backend's ₹1,00,00,000 limit. */
+const BUDGET_PATTERN = /^\d{1,8}(\.\d{1,2})?$/;
 
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
@@ -33,18 +37,20 @@ const body = (weight: 400 | 500 | 600 | 700, size: number, color: string) =>
   ({ fontFamily: tm.font.body[weight], fontSize: size, color }) as const;
 
 /**
- * Phone → OTP → name. Once the account has a token and a name, `auth.isLoggedIn` turns true
+ * Phone → OTP → name → daily budget. Once the account has a token, a name and a budget confirmed at this
+ * login, `auth.isLoggedIn` turns true
  * and App shows the chat page instead.
  */
 export function LoginPage() {
   const { width } = useWindowDimensions();
   const auth = useAuth();
 
-  // Verified earlier but never picked a name: resume at the name step.
-  const [step, setStep] = useState<Step>(auth.token && !auth.name ? 'name' : 'phone');
+  // Resume where a verified session stopped: no name yet, or no budget confirmed since this login.
+  const [step, setStep] = useState<Step>(auth.token ? (auth.name ? 'budget' : 'name') : 'phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [name, setName] = useState('');
+  const [budget, setBudget] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [shaking, setShaking] = useState(false);
@@ -53,9 +59,10 @@ export function LoginPage() {
   const phoneRef = useRef<TextInputInstance>(null);
   const otpRef = useRef<TextInputInstance>(null);
   const nameRef = useRef<TextInputInstance>(null);
+  const budgetRef = useRef<TextInputInstance>(null);
 
   useEffect(() => {
-    const ref = { phone: phoneRef, otp: otpRef, name: nameRef }[step];
+    const ref = { phone: phoneRef, otp: otpRef, name: nameRef, budget: budgetRef }[step];
     const t = setTimeout(() => ref.current?.focus(), 60);
     return () => clearTimeout(t);
   }, [step]);
@@ -69,6 +76,19 @@ export function LoginPage() {
   const phoneValid = phone.length === PHONE_LENGTH;
   const nameTrimmed = name.trim();
   const nameValid = NAME_PATTERN.test(nameTrimmed);
+  const budgetValid = BUDGET_PATTERN.test(budget.trim()) && Number(budget) > 0;
+
+  // Budget step: start from the budget saved on the account, so keeping it is one tap.
+  const { token } = auth;
+  useEffect(() => {
+    if (step !== 'budget' || !token) return;
+    authApi
+      .me(token)
+      .then((user) => {
+        if (user.daily_budget) setBudget((typed) => typed || String(Number(user.daily_budget)));
+      })
+      .catch(() => {});
+  }, [step, token]);
 
   const sendOtp = async () => {
     if (!phoneValid || busy) return;
@@ -91,9 +111,7 @@ export function LoginPage() {
     setError('');
     try {
       const { hasUsername } = await auth.verifyOtp(phone, code);
-      // With a username the account is now logged in and App switches to the chat page.
-      if (hasUsername) return;
-      setStep('name');
+      setStep(hasUsername ? 'budget' : 'name');
     } catch (e) {
       const wrongCode = e instanceof ApiError && e.status === 401;
       setError(wrongCode ? "That code didn't match. Try again." : errorMessage(e));
@@ -146,8 +164,24 @@ export function LoginPage() {
     setBusy(true);
     setError('');
     try {
-      // On success the account is logged in and App switches to the chat page.
       await auth.saveName(nameTrimmed);
+      setStep('budget');
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const finishBudget = async () => {
+    if (!budgetValid || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      // Android's "allow SMS" popup, so bank debit messages can be tracked. Saying no still logs in.
+      await askSmsPermission().catch(() => false);
+      // On success the account is logged in and App switches to the chat page.
+      await auth.saveBudget(Number(budget));
     } catch (e) {
       setError(errorMessage(e));
       setBusy(false);
@@ -285,7 +319,42 @@ export function LoginPage() {
               {Boolean(error || (nameTrimmed && !nameValid)) && (
                 <FormMessage error={Boolean(error)}>{error || 'Use 3–30 letters, numbers or underscores.'}</FormMessage>
               )}
-              <PrimaryButton disabled={!nameValid} busy={busy} busyLabel="Setting things up…" onPress={finish}>
+              <PrimaryButton disabled={!nameValid} busy={busy} busyLabel="Saving…" onPress={finish}>
+                Continue
+              </PrimaryButton>
+            </FadeUp>
+          )}
+
+          {step === 'budget' && (
+            <FadeUp key="budget" duration={450}>
+              <StepIntro title="What's your daily budget?">
+                {"I'll warn you when your bank messages show you've spent more than this in a day."}
+              </StepIntro>
+              <FieldLabel>Daily budget (₹)</FieldLabel>
+              <FieldShell valid={budgetValid}>
+                <BareInput
+                  ref={budgetRef}
+                  accessibilityLabel="Daily budget in rupees"
+                  keyboardType="decimal-pad"
+                  maxLength={11}
+                  placeholder="e.g. 500"
+                  returnKeyType="done"
+                  value={budget}
+                  onChangeText={(text) => {
+                    setBudget(text.replace(/[^\d.]/g, ''));
+                    setError('');
+                  }}
+                  onSubmitEditing={finishBudget}
+                  submitBehavior="blurAndSubmit"
+                />
+              </FieldShell>
+              {Boolean(error || (budget && !budgetValid)) && (
+                <FormMessage error={Boolean(error)}>{error || 'Enter an amount in rupees, like 500.'}</FormMessage>
+              )}
+              <Text style={[body(400, 13, tm.color.muted), { marginTop: 12, lineHeight: 19.5 }]}>
+                Next, Android asks to let TaskMon read SMS. Only Federal Bank debit messages are used; others are ignored.
+              </Text>
+              <PrimaryButton disabled={!budgetValid} busy={busy} busyLabel="Setting things up…" onPress={finishBudget}>
                 Continue
               </PrimaryButton>
             </FadeUp>

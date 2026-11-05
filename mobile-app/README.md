@@ -94,6 +94,21 @@ The APK is written to `android\app\build\outputs\apk\release\app-release.apk`. C
 
 The generated project signs release builds with the debug keystore. That's fine for installing the APK on your own phones. To publish on the Play Store, create an upload key and build an `.aab`. See [Expo: local app production](https://docs.expo.dev/guides/local-app-production/), or let EAS manage the key (below).
 
+## Bank SMS tracking (`modules/bank-sms`)
+
+A local native module (Kotlin), linked automatically by `expo prebuild`. Edit it here, never in `android/`.
+
+- `BankSmsReceiver` gets every incoming SMS, even with the app closed. It keeps only Federal Bank debit
+  alerts ("Debited Rs … -Federal Bank") and starts the JS task `TaskMonBankSms` (`index.ts` →
+  `utils/bankSms.ts`), which posts the text to `POST /api/v1/sms/bank`. Other SMS never leave the phone.
+- `BankSmsModule.readBankDebits(since)` reads the inbox. On app open and whenever the app returns to the
+  foreground (`hooks/useBankSmsSync.ts`), bank SMS since the last sync are sent too. That catches payments
+  missed while offline. The backend records each bank reference once, so re-sending is harmless.
+- Permissions `RECEIVE_SMS` and `READ_SMS` are asked on the daily budget step after login.
+
+Google Play only allows SMS permissions for default SMS apps and approved cases, so this build is for
+installing the APK directly.
+
 ## Build the APK in the cloud (EAS)
 
 This needs no local Android tooling, but it does need a free Expo account:
