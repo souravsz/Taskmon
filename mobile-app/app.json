@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "TaskMon",
+    "slug": "taskmon",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FBF8F3",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.aakri.taskmon"
+    },
+    "android": {
+      "package": "in.aakri.taskmon",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#FBF8F3",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 120,
+          "resizeMode": "contain",
+          "backgroundColor": "#FBF8F3"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "./plugins/withCmakeVersion",
+        "3.31.6"
+      ]
+    ]
+  }
+}
