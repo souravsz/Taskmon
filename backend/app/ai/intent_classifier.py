@@ -10,11 +10,10 @@ from app.ai.groq_client import chat_completion
 from app.ai.intent_catalogue import INTENTS
 from app.ai.prompts import build_classifier_messages
 from app.ai.schemas import ClassifierResult
-from app.core.exceptions import AIServiceError
 
 logger = logging.getLogger(__name__)
 
-ATTEMPTS = 2  # one retry when Groq's JSON is unreadable or doesn't match the schema
+ATTEMPTS = 2  # one retry when Groq's JSON is unreadable or doesn't match the schema, then FALLBACK
 
 
 def parse_result(raw: str) -> ClassifierResult:
@@ -27,10 +26,6 @@ def parse_result(raw: str) -> ClassifierResult:
         result.operations = [op for op in result.operations if op.intent in INTENTS]
         if not result.operations and result.type in ("ACTION", "QUERY"):
             result.type = "FALLBACK"
-            result.response = (
-                result.response
-                or "Sorry, I can't do that yet. I can help with reminders, expenses and notes."
-            )
     return result
 
 
@@ -48,4 +43,4 @@ async def classify(
             logger.warning(
                 "Groq reply unusable (attempt %d/%d): %s | raw=%r", attempt, ATTEMPTS, exc, raw[:500]
             )
-    raise AIServiceError("I couldn't understand that properly. Could you rephrase it?")
+    return ClassifierResult(type="FALLBACK")

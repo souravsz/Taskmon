@@ -21,7 +21,6 @@ from app.core.config import settings
 from app.models import (
     ActionHistory,
     Expense,
-    Message,
     Note,
     NotificationTask,
     PendingAction,
@@ -465,7 +464,7 @@ def test_yes_only_confirms_the_latest_question(chat: Chat, db_session: Session) 
     reply = chat.send("Delete all my notes", result("ACTION", op("delete_note", all=True)))
     assert reply["pending"]["question"] == "Are you sure you want to delete all your notes (2 notes)?"
 
-    chat.send("What's the capital of France?", result("CONVERSATION", response="Paris."))
+    chat.send("What's the capital of France?", result("FALLBACK"))
     reply = chat.send("Yes", result("ACTION", pending="confirm"))
     assert reply["text"].startswith("Just to be sure: Are you sure")
     assert len(rows(db_session, Note)) == 2
@@ -483,11 +482,8 @@ def test_forget_it_cancels(chat: Chat, db_session: Session) -> None:
 
 def test_topic_change_keeps_the_pending_reminder(chat: Chat, db_session: Session) -> None:
     chat.send("Remind me to call Rahul", result("ACTION", op("create_reminder", {"title": "Call Rahul"})))
-    reply = chat.send(
-        "Explain FastAPI dependency injection",
-        result("CONVERSATION", response="FastAPI calls your dependency functions for you..."),
-    )
-    assert reply["text"].startswith("FastAPI calls")
+    reply = chat.send("Explain FastAPI dependency injection", result("FALLBACK"))
+    assert reply["text"] == "Sorry, I can only help with your reminders, expenses and notes."
     assert rows(db_session, NotificationTask) == []
     assert [p.status for p in rows(db_session, PendingAction)] == [PendingStatus.WAITING_FOR_INFO]
 
@@ -589,14 +585,21 @@ def test_empty_results_say_so(chat: Chat) -> None:
 # ======================================================================== errors
 
 
-def test_unreadable_groq_reply_retries_then_fails_cleanly(
-    chat: Chat, client: TestClient, db_session: Session
-) -> None:
-    chat.fake.replies.extend(["not json", '{"type": "NONSENSE"}'])
-    res = client.post(f"{API}/chat", json={"message": "hi"}, headers=auth_header(chat.token))
-    assert res.status_code == 503 and res.json()["code"] == "ai_unavailable"
+def test_unreadable_groq_reply_retries_then_falls_back(chat: Chat) -> None:
+    reply = chat.send("That's duty of developer right", "not json", '{"type": "NONSENSE"}')
     assert len(chat.fake.calls) == 2
-    assert rows(db_session, Message) == []  # nothing saved, so sending again is safe
+    assert reply["type"] == "FALLBACK"
+    assert reply["text"] == "Sorry, I can only help with your reminders, expenses and notes."
+
+
+def test_fallback_ignores_groqs_text(chat: Chat) -> None:
+    reply = chat.send("Capital of France?", result("FALLBACK", response="Paris is the capital."))
+    assert reply["text"] == "Sorry, I can only help with your reminders, expenses and notes."
+
+
+def test_questions_about_taskmon_get_groqs_answer(chat: Chat) -> None:
+    answer = "I can set reminders, log expenses and save notes."
+    assert chat.send("What can you do?", result("CONVERSATION", response=answer))["text"] == answer
 
 
 def test_bad_first_reply_is_retried(chat: Chat) -> None:
@@ -648,6 +651,24 @@ def test_groq_client_maps_sdk_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(groq_client, "get_client", lambda c=client: c)
         with pytest.raises(AIServiceError, match=message):
             asyncio.run(groq_client.chat_completion([{"role": "user", "content": "hi"}]))
+
+
+def test_groq_json_validate_failed_is_an_unusable_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Groq's 400 for a plain-text reply in JSON mode returns "" (retry, then FALLBACK), not a 503."""
+    request = httpx.Request("POST", "https://api.groq.com")
+    body = {"error": {"code": "json_validate_failed", "failed_generation": "I'm just the layer..."}}
+    error = groq.BadRequestError("bad", response=httpx.Response(400, request=request), body=body)
+
+    class Completions:
+        async def create(self, **_: Any) -> None:
+            raise error
+
+    client = type("Client", (), {"chat": type("Chat", (), {"completions": Completions()})()})()
+    monkeypatch.setattr(settings, "GROQ_API_KEY", SecretStr("k"))
+    monkeypatch.setattr(groq_client, "get_client", lambda: client)
+    calls: list[dict] = []
+    assert asyncio.run(groq_client.chat_completion([{"role": "user", "content": "hi"}], calls=calls)) == ""
+    assert calls[0]["error"].startswith("BadRequestError")  # still visible in the debug trace
 
 
 def test_missing_api_key(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -710,8 +731,9 @@ def test_debug_trace_is_returned(chat: Chat) -> None:
         assert expected in steps
     sent = next(s for s in reply["debug"] if s["step"] == "groq.request")
     assert sent["purpose"] == "classify"
-    assert [m["role"] for m in sent["messages"]] == ["system", "system", "user"]  # prompt, CONTEXT, message
-    assert sent["messages"][-1]["content"] == "hi"
+    # prompt, CONTEXT, message, "JSON only" reminder
+    assert [m["role"] for m in sent["messages"]] == ["system", "system", "user", "system"]
+    assert sent["messages"][-2]["content"] == "hi"
     got = next(s for s in reply["debug"] if s["step"] == "groq.response")
     assert json.loads(got["response"])["response"] == "Hello!"
     assert all(isinstance(s["ms"], int) for s in reply["debug"])

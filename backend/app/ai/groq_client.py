@@ -50,6 +50,10 @@ async def chat_completion(
         record["duration_ms"] = round((time.perf_counter() - started) * 1000)
         record["error"] = f"{type(exc).__name__}: {exc}"
         logger.warning("Groq call failed after %sms: %s", record["duration_ms"], record["error"])
+        # In JSON mode Groq rejects a plain-text reply with 400 json_validate_failed. That's an unusable
+        # reply, not an outage: return "" so the caller handles it like unreadable JSON (retry, then FALLBACK).
+        if isinstance(exc, groq.BadRequestError) and "json_validate_failed" in str(exc.body):
+            return ""
         raise AIServiceError(_friendly(exc)) from exc
 
     text = completion.choices[0].message.content or ""

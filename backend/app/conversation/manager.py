@@ -3,7 +3,8 @@
 load conversation + pending action → build context → Groq classifies → route:
   reply to a pending question  → continue that operation
   ACTION / QUERY               → run each operation
-  CONVERSATION / CLARIFICATION / FALLBACK → Groq's reply
+  CONVERSATION / CLARIFICATION → Groq's reply
+  FALLBACK (unrelated, or Groq's reply unusable twice) → one fixed reply
 → save both messages → commit → structured reply
 """
 
