@@ -63,9 +63,11 @@ function Row({ children }: { children: ReactNode }) {
   );
 }
 
-/** Every step the backend took for this message (CHAT_DEBUG=true only). Collapsed by default. */
+/** Every step the backend took for this message (CHAT_DEBUG=true only), in order, with the time since the
+ * message arrived. Groq calls show exactly what was sent and what came back. Collapsed by default. */
 function DebugPanel({ steps, type }: { steps: DebugStep[]; type: string }) {
   const { tm } = useTheme();
+  const total = steps.length ? Number(steps[steps.length - 1].ms ?? 0) : 0;
   return (
     <Box
       component="details"
@@ -73,31 +75,108 @@ function DebugPanel({ steps, type }: { steps: DebugStep[]; type: string }) {
         fontSize: 12,
         color: tm.color.inkSoft,
         '& summary': { cursor: 'pointer', fontWeight: 600, width: 'fit-content' },
-      }}
-    >
-      <summary>
-        Debug · {type} · {steps.length} steps
-      </summary>
-      <Box
-        component="pre"
-        sx={{
-          m: '8px 0 0',
-          p: '12px 14px',
-          maxHeight: 360,
+        '& pre': {
+          m: '4px 0 0',
+          p: '8px 10px',
+          maxHeight: 320,
           overflow: 'auto',
-          borderRadius: tm.radius.small,
-          bgcolor: tm.color.surface,
-          border: `1px solid ${tm.color.hairline}`,
+          borderRadius: tm.radius.tiny,
+          bgcolor: tm.color.tintSubtle,
           fontFamily: tm.font.mono,
           fontSize: 12,
           lineHeight: 1.45,
           color: tm.color.ink,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
+        },
+      }}
+    >
+      <summary>
+        Debug · {type} · {steps.length} steps · {total} ms
+      </summary>
+      <Box
+        component="ol"
+        sx={{
+          m: '8px 0 0',
+          p: '12px 14px 12px 34px',
+          borderRadius: tm.radius.small,
+          bgcolor: tm.color.surface,
+          border: `1px solid ${tm.color.hairline}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
         }}
       >
-        {steps.map(({ step, ...details }) => `${step}  ${JSON.stringify(details)}`).join('\n\n')}
+        {steps.map(({ step, ms, ...details }, i) => (
+          <li key={i}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+              <Box component="span" sx={{ fontFamily: tm.font.mono, fontWeight: 700, color: step.startsWith('groq.') ? tm.color.brandText : tm.color.ink }}>
+                {step}
+              </Box>
+              <span>+{String(ms)} ms</span>
+            </Box>
+            {step === 'groq.request' ? <GroqRequest details={details} /> : <StepDetails details={details} />}
+          </li>
+        ))}
       </Box>
     </Box>
+  );
+}
+
+/** Pretty JSON; a JSON string (e.g. Groq's raw reply) is parsed so it reads as JSON too. */
+const pretty = (value: unknown) => {
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  return JSON.stringify(value, null, 2);
+};
+
+function StepDetails({ details }: { details: Record<string, unknown> }) {
+  if (Object.keys(details).length === 0) return null;
+  const { response, ...rest } = details;
+  return (
+    <>
+      {Object.keys(rest).length > 0 && <pre>{pretty(rest)}</pre>}
+      {response !== undefined && (
+        <>
+          <Box sx={{ mt: '6px', fontWeight: 600 }}>response</Box>
+          <pre>{pretty(response)}</pre>
+        </>
+      )}
+    </>
+  );
+}
+
+/** The exact request sent to Groq: settings, then every message by role. Long messages are folded. */
+function GroqRequest({ details }: { details: Record<string, unknown> }) {
+  const { messages, ...settings } = details as { messages?: { role: string; content: string }[] };
+  return (
+    <>
+      <pre>{pretty(settings)}</pre>
+      {(messages ?? []).map((m, i) => {
+        const isContext = m.content.startsWith('CONTEXT: ');
+        return (
+        <Box key={i} sx={{ mt: '6px' }}>
+          {!isContext && m.content.length > 600 ? (
+            <details>
+              <summary>
+                {m.role} · {m.content.length.toLocaleString()} chars
+              </summary>
+              <pre>{m.content}</pre>
+            </details>
+          ) : (
+            <>
+              <Box sx={{ fontWeight: 600 }}>{isContext ? `${m.role} · CONTEXT` : m.role}</Box>
+              <pre>{isContext ? pretty(m.content.slice('CONTEXT: '.length)) : m.content}</pre>
+            </>
+          )}
+        </Box>
+        );
+      })}
+    </>
   );
 }

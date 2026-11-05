@@ -108,10 +108,10 @@ def pct_change(current: Decimal, previous: Decimal) -> Decimal | None:
     return ((current - previous) / previous * 100).quantize(Decimal("0.1"))
 
 
-async def insights_tip(figures: dict[str, Any]) -> str | None:
+async def insights_tip(figures: dict[str, Any], calls: list[dict[str, Any]]) -> str | None:
     """A sentence of advice written by Groq from our figures. None if Groq is unavailable."""
     try:
-        tip = await chat_completion(build_insights_messages(figures), json_mode=False)
+        tip = await chat_completion(build_insights_messages(figures), json_mode=False, calls=calls)
     except AIServiceError as exc:
         logger.info("Skipping insights tip: %s", exc)
         return None

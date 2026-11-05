@@ -240,8 +240,9 @@ async def run_query(turn: Turn, intent: Intent, values: dict[str, Any]) -> None:
         ]
         if biggest:
             lines.append(f"Your biggest single expense was {figures['biggest_expense']}.")
-        tip = await insights_tip(figures)
-        turn.step("query.tip", tip=tip)
+        calls: list[dict[str, Any]] = []
+        tip = await insights_tip(figures, calls)
+        turn.groq_steps(calls, "insights tip")
         if tip:
             lines.append(tip)
         turn.say(

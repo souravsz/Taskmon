@@ -80,13 +80,20 @@ async def handle_message(db: Session, user: User, body: ChatRequest) -> ChatResp
         result = quick_action_result(body.quick_action, turn)
         turn.step("quick_action", action=body.quick_action, groq_called=False)
     else:
+        calls: list[dict[str, Any]] = []
         try:
-            result, raw = await classify(context, history, body.message)
+            result = await classify(context, history, body.message, calls)
         except AIServiceError as exc:
             db.rollback()  # nothing is saved, so the user can simply send it again
-            logger.warning("chat user=%s conv=%s groq failed: %s", user.id, conversation.id, exc.message)
+            logger.warning(
+                "chat user=%s conv=%s groq failed: %s | calls=%s",
+                user.id,
+                conversation.id,
+                exc.message,
+                calls,
+            )
             raise
-        turn.step("groq.raw", raw=raw)
+        turn.groq_steps(calls, "classify")
     turn.step("classified", result=result.model_dump())
 
     try:

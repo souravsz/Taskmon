@@ -44,12 +44,19 @@ class FakeGroq:
         self.replies: list[Any] = []
         self.calls: list[list[dict[str, str]]] = []
 
-    async def __call__(self, messages: list[dict[str, str]], json_mode: bool = True) -> str:
+    async def __call__(
+        self, messages: list[dict[str, str]], json_mode: bool = True, calls: list[dict] | None = None
+    ) -> str:
         self.calls.append(messages)
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
-        return reply if isinstance(reply, str) else json.dumps(reply)
+        text = reply if isinstance(reply, str) else json.dumps(reply)
+        if calls is not None:
+            calls.append(
+                {"request": {"model": "fake", "messages": messages}, "response": text, "duration_ms": 1}
+            )
+        return text
 
     def context(self, call: int = -1) -> dict[str, Any]:
         """The CONTEXT block sent to Groq in a call."""
@@ -691,8 +698,30 @@ def test_other_users_records_are_never_targeted(
 def test_debug_trace_is_returned(chat: Chat) -> None:
     reply = chat.send("hi", result("CONVERSATION", response="Hello!"))
     steps = [s["step"] for s in reply["debug"]]
-    for expected in ("received", "context", "groq.raw", "classified", "route.conversation", "reply.saved"):
+    for expected in (
+        "received",
+        "context",
+        "groq.request",
+        "groq.response",
+        "classified",
+        "route.conversation",
+        "reply.saved",
+    ):
         assert expected in steps
+    sent = next(s for s in reply["debug"] if s["step"] == "groq.request")
+    assert sent["purpose"] == "classify"
+    assert [m["role"] for m in sent["messages"]] == ["system", "system", "user"]  # prompt, CONTEXT, message
+    assert sent["messages"][-1]["content"] == "hi"
+    got = next(s for s in reply["debug"] if s["step"] == "groq.response")
+    assert json.loads(got["response"])["response"] == "Hello!"
+    assert all(isinstance(s["ms"], int) for s in reply["debug"])
+
+
+def test_debug_trace_shows_the_retry(chat: Chat) -> None:
+    reply = chat.send("hello", "oops", result("CONVERSATION", response="Hi there!"))
+    responses = [s for s in reply["debug"] if s["step"] == "groq.response"]
+    assert [r["attempt"] for r in responses] == [1, 2]
+    assert "invalid" in responses[0] and "invalid" not in responses[1]
 
 
 def test_debug_trace_hidden_when_off(chat: Chat, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,7 @@
 """What the engine knows while handling one message, and the CONTEXT it sends to Groq."""
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -50,18 +51,33 @@ class Turn:
         default_factory=list
     )  # operations that must wait for that question
     trace: list[dict[str, Any]] = field(default_factory=list)
+    started: float = field(default_factory=time.perf_counter)
 
-    def step(self, name: str, **details: Any) -> None:
-        """Debug trace: logged, and returned to the frontend when CHAT_DEBUG is on."""
-        self.trace.append({"step": name, **details})
+    def step(self, name: str, at: float | None = None, **details: Any) -> None:
+        """Debug trace: logged, and returned to the frontend when CHAT_DEBUG is on.
+        `ms` is the time since the message arrived (`at` = when it happened, if not now)."""
+        ms = round(((at or time.perf_counter()) - self.started) * 1000)
+        self.trace.append({"step": name, "ms": ms, **details})
         logger.log(
             logging.INFO if settings.CHAT_DEBUG else logging.DEBUG,
-            "chat user=%s conv=%s %s %s",
+            "chat user=%s conv=%s +%sms %s %s",
             self.user.id,
             self.conversation.id,
+            ms,
             name,
             details or "",
         )
+
+    def groq_steps(self, calls: list[dict[str, Any]], purpose: str) -> None:
+        """Each Groq call as two steps: exactly what was sent, then exactly what came back."""
+        for attempt, call in enumerate(calls, 1):
+            self.step(
+                "groq.request", at=call.get("sent_at"), purpose=purpose, attempt=attempt, **call["request"]
+            )
+            result = {
+                k: call[k] for k in ("response", "error", "invalid", "duration_ms", "tokens") if k in call
+            }
+            self.step("groq.response", purpose=purpose, attempt=attempt, **result)
 
     def say(
         self,

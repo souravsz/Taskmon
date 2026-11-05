@@ -1,6 +1,7 @@
 import logging
 import time
 from functools import lru_cache
+from typing import Any
 
 import groq
 from groq import AsyncGroq
@@ -21,45 +22,57 @@ def get_client() -> AsyncGroq:
     )
 
 
-async def chat_completion(messages: list[dict[str, str]], json_mode: bool = True) -> str:
-    """Send `messages` to Groq and return the reply text. Raises AIServiceError on any failure."""
+async def chat_completion(
+    messages: list[dict[str, str]], json_mode: bool = True, calls: list[dict[str, Any]] | None = None
+) -> str:
+    """Send `messages` to Groq and return the reply text. Raises AIServiceError on any failure.
+
+    If `calls` is given, the exact request and Groq's reply (or the error) are appended to it for the
+    debug trace: {"request", "response" | "error", "duration_ms", "tokens"}."""
     if not settings.GROQ_API_KEY.get_secret_value():
         raise AIServiceError("GROQ_API_KEY is not set in backend/.env")
 
-    extra = {"reasoning_effort": settings.GROQ_REASONING_EFFORT} if settings.GROQ_REASONING_EFFORT else {}
+    params: dict[str, Any] = {
+        "model": settings.GROQ_MODEL,
+        "temperature": 0 if json_mode else 0.4,
+        "response_format": {"type": "json_object"} if json_mode else {"type": "text"},
+    }
+    if settings.GROQ_REASONING_EFFORT:
+        params["reasoning_effort"] = settings.GROQ_REASONING_EFFORT
     started = time.perf_counter()
+    record: dict[str, Any] = {"request": {**params, "messages": messages}, "sent_at": started}
+    if calls is not None:
+        calls.append(record)
+
     try:
-        completion = await get_client().chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=messages,  # type: ignore[arg-type]
-            response_format={"type": "json_object"} if json_mode else {"type": "text"},
-            temperature=0 if json_mode else 0.4,
-            **extra,  # type: ignore[arg-type]
-        )
-    except groq.RateLimitError as exc:
-        logger.warning("Groq rate limit: %s", exc)
-        raise AIServiceError(
-            "I'm getting a lot of requests right now. Please try again in a minute."
-        ) from exc
-    except groq.APITimeoutError as exc:
-        logger.warning("Groq timed out after %.1fs", time.perf_counter() - started)
-        raise AIServiceError("That took too long to think about. Please try again.") from exc
-    except groq.APIConnectionError as exc:
-        logger.warning("Groq unreachable: %s", exc)
-        raise AIServiceError(
-            "I can't reach my language service right now. Please try again shortly."
-        ) from exc
-    except groq.APIStatusError as exc:
-        logger.warning("Groq returned %s: %s", exc.status_code, exc)
-        raise AIServiceError() from exc
+        completion = await get_client().chat.completions.create(messages=messages, **params)  # type: ignore[arg-type]
+    except groq.APIError as exc:
+        record["duration_ms"] = round((time.perf_counter() - started) * 1000)
+        record["error"] = f"{type(exc).__name__}: {exc}"
+        logger.warning("Groq call failed after %sms: %s", record["duration_ms"], record["error"])
+        raise AIServiceError(_friendly(exc)) from exc
 
     text = completion.choices[0].message.content or ""
     usage = completion.usage
+    record["duration_ms"] = round((time.perf_counter() - started) * 1000)
+    record["response"] = text
+    record["tokens"] = (
+        {"prompt": usage.prompt_tokens, "completion": usage.completion_tokens, "total": usage.total_tokens}
+        if usage
+        else None
+    )
     logger.info(
-        "Groq %s replied in %.2fs (tokens in=%s out=%s)",
-        settings.GROQ_MODEL,
-        time.perf_counter() - started,
-        usage.prompt_tokens if usage else "?",
-        usage.completion_tokens if usage else "?",
+        "Groq %s replied in %sms (tokens %s)", settings.GROQ_MODEL, record["duration_ms"], record["tokens"]
     )
     return text
+
+
+def _friendly(exc: groq.APIError) -> str:
+    """What the user sees for each kind of Groq failure."""
+    if isinstance(exc, groq.RateLimitError):
+        return "I'm getting a lot of requests right now. Please try again in a minute."
+    if isinstance(exc, groq.APITimeoutError):
+        return "That took too long to think about. Please try again."
+    if isinstance(exc, groq.APIConnectionError):
+        return "I can't reach my language service right now. Please try again shortly."
+    return AIServiceError.message

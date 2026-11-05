@@ -35,17 +35,16 @@ def parse_result(raw: str) -> ClassifierResult:
 
 
 async def classify(
-    context: dict[str, Any], history: list[dict[str, str]], message: str
-) -> tuple[ClassifierResult, str]:
-    """Returns the validated result and Groq's raw text (for the debug trace)."""
+    context: dict[str, Any], history: list[dict[str, str]], message: str, calls: list[dict[str, Any]]
+) -> ClassifierResult:
+    """Every Groq call made (including a retry) is appended to `calls` for the debug trace."""
     messages = build_classifier_messages(context, history, message)
-    raw = ""
     for attempt in range(1, ATTEMPTS + 1):
-        raw = await chat_completion(messages)
-        logger.debug("Groq raw reply (attempt %d): %s", attempt, raw)
+        raw = await chat_completion(messages, calls=calls)
         try:
-            return parse_result(raw), raw
+            return parse_result(raw)
         except (ValueError, ValidationError) as exc:
+            calls[-1]["invalid"] = str(exc)
             logger.warning(
                 "Groq reply unusable (attempt %d/%d): %s | raw=%r", attempt, ATTEMPTS, exc, raw[:500]
             )
