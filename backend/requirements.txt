@@ -7,3 +7,5 @@ cryptography==50.0.2
 pydantic==2.14.2
 pydantic-settings==2.16.2
 pyjwt==2.15.1
+groq==1.7.0
+tzdata==2026.6  # timezone database (Windows has none built in)

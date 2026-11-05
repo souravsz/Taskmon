@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     STATIC_OTP: str = "1234"
     DEFAULT_COUNTRY_CODE: str = "91"
 
+    # Groq LLM (server-side only; never sent to the frontend)
+    GROQ_API_KEY: SecretStr = SecretStr("")
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_TIMEOUT_SECONDS: float = 20
+    GROQ_MAX_RETRIES: int = 2  # the SDK retries timeouts, 429s and 5xx itself
+    # gpt-oss models think before answering; "low" keeps that short (fewer tokens, faster). Empty = model default.
+    GROQ_REASONING_EFFORT: str = "low"
+
+    # Chat engine
+    CHAT_DEBUG: bool = False  # log every step at INFO and return the steps in the chat response
+    PENDING_ACTION_MINUTES: int = 15
+    DEFAULT_TIMEZONE: str = "Asia/Kolkata"
+
     # CORS: comma-separated list of allowed frontend origins
     CORS_ORIGINS: str = "http://localhost:5173"
 

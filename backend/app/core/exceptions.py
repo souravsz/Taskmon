@@ -42,6 +42,22 @@ class ConflictError(AppError):
     message = "Resource already exists"
 
 
+class AIServiceError(AppError):
+    """Groq is down, slow, rate-limited or returned something unusable. Nothing was changed."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "ai_unavailable"
+    message = "I'm having trouble thinking right now. Please try again in a moment."
+
+
+class DatabaseError(AppError):
+    """A write failed and the whole chat turn was rolled back."""
+
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code = "database_error"
+    message = "Something went wrong while saving, so nothing was changed. Please try again."
+
+
 class InvalidTokenError(UnauthorizedError):
     code = "invalid_token"
     message = "Invalid or expired token"
