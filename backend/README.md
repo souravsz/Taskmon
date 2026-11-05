@@ -136,6 +136,12 @@ docker run --rm --env-file .env taskmon-api alembic upgrade head
 docker run -p 8000:8000 --env-file .env taskmon-api
 ```
 
+Secrets are never baked into the image: `.dockerignore` excludes `.env`, and values come from
+`--env-file` at run time. On the server, keep the production `.env` next to the checkout (it is gitignored)
+and write it as plain `KEY=value` lines (no spaces around `=`, no quotes). With `ENVIRONMENT=production`
+the app refuses to start if `JWT_SECRET_KEY` is the template placeholder or `DB_PASSWORD` / `GROQ_API_KEY`
+are missing.
+
 Inside Docker, `DB_HOST=localhost` points at the container itself. Use your MySQL host
 (e.g. `host.docker.internal` on Docker Desktop).
 

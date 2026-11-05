@@ -88,6 +88,13 @@ class Settings(BaseSettings):
                 raise ValueError("DEBUG must be false in production")
             if "*" in self.cors_origins:
                 raise ValueError("CORS_ORIGINS must not contain '*' in production")
+            # Secrets must come from the server's environment, never the .env.example placeholders
+            if self.JWT_SECRET_KEY.get_secret_value().startswith("change-me"):
+                raise ValueError("JWT_SECRET_KEY is still the .env.example placeholder; set a real secret")
+            if not self.DATABASE_URL and self.DB_PASSWORD.get_secret_value() in ("", "change-me"):
+                raise ValueError("DB_PASSWORD (or DATABASE_URL) must be set in production")
+            if not self.GROQ_API_KEY.get_secret_value():
+                raise ValueError("GROQ_API_KEY must be set in production")
         return self
 
 

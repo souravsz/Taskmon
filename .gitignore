@@ -2,3 +2,8 @@
 .playwright-mcp/
 .DS_Store
 Thumbs.db
+
+# Environment files: real values stay on each machine; only templates are committed
+.env
+.env.*
+!.env.example
