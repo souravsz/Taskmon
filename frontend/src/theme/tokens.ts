@@ -83,6 +83,7 @@ export const tokens = {
   font: {
     display: "'Bricolage Grotesque', sans-serif",
     body: "'Figtree', system-ui, sans-serif",
+    mono: "ui-monospace, 'Cascadia Code', Consolas, monospace",
   },
 
   type: {

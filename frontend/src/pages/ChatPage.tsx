@@ -30,16 +30,12 @@ export function ChatPage() {
   const hasMessages = chat.messages.length > 0 || chat.isTyping;
   const canSend = chat.draft.trim().length > 0 && !chat.isTyping;
 
-  // When "Show more" grows the newest card, keep its new rows in view too.
-  const last = chat.messages[chat.messages.length - 1];
-  const lastListRows = last?.role === 'bot' && last.kind === 'list' ? last.rows.length : 0;
-
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const raf = requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }));
     return () => cancelAnimationFrame(raf);
-  }, [chat.messages.length, chat.isTyping, lastListRows]);
+  }, [chat.messages.length, chat.isTyping]);
 
   return (
     <Screen fixed>
@@ -60,7 +56,7 @@ export function ChatPage() {
           <MessageList
             messages={chat.messages}
             isTyping={chat.isTyping}
-            onLoadMore={chat.loadMore}
+            onReply={(text) => void chat.send(text)}
           />
         ) : (
           <Greeting name={name ?? ''} />
@@ -77,7 +73,7 @@ export function ChatPage() {
         }}
       >
         <Box sx={{ maxWidth: tm.layout.chatMaxWidth, mx: 'auto' }}>
-          <QuickActions onPick={(prompt) => void chat.send(prompt)} />
+          <QuickActions onPick={(prompt, action) => void chat.send(prompt, action)} />
           <ChatInput
             value={chat.draft}
             onChange={chat.setDraft}

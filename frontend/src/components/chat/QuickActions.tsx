@@ -4,7 +4,10 @@ import { styled } from '@mui/material/styles';
 import { hues, hueColor } from '../../theme/tokens';
 import { Marker } from './cards/CardParts';
 
+export type QuickActionId = 'today' | 'reminders' | 'expenses' | 'notes';
+
 interface QuickAction {
+  id: QuickActionId;
   label: string;
   prompt: string;
   hue: number;
@@ -12,10 +15,10 @@ interface QuickAction {
 }
 
 export const QUICK_ACTIONS: QuickAction[] = [
-  { label: 'Today', prompt: "What's on my plate today?", hue: hues.today, shape: 'circle' },
-  { label: 'Reminders', prompt: 'Show my reminders', hue: hues.reminder, shape: 'circle' },
-  { label: 'Expenses', prompt: 'Show my expenses', hue: hues.expense, shape: 'square' },
-  { label: 'Notes', prompt: 'Show my notes', hue: hues.note, shape: 'diamond' },
+  { id: 'today', label: 'Today', prompt: "What's on my plate today?", hue: hues.today, shape: 'circle' },
+  { id: 'reminders', label: 'Reminders', prompt: 'Show my reminders', hue: hues.reminder, shape: 'circle' },
+  { id: 'expenses', label: 'Expenses', prompt: 'Show my expenses', hue: hues.expense, shape: 'square' },
+  { id: 'notes', label: 'Notes', prompt: 'Show my notes', hue: hues.note, shape: 'diamond' },
 ];
 
 const Chip = styled('button')(({ theme: { tm } }) => ({
@@ -39,12 +42,13 @@ const Chip = styled('button')(({ theme: { tm } }) => ({
   '&:hover': { borderColor: tm.color.borderHover, transform: 'translateY(-1px)' },
 }));
 
-/** Four equal-width pills in a single row. Never overflows, even at 320px. */
-export function QuickActions({ onPick }: { onPick: (prompt: string) => void }) {
+/** Four equal-width pills in a single row. Never overflows, even at 320px.
+ * Each one runs its list on the backend directly (no Groq call). */
+export function QuickActions({ onPick }: { onPick: (prompt: string, action: QuickActionId) => void }) {
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', p: '2px 0 10px' }}>
       {QUICK_ACTIONS.map((a) => (
-        <Chip key={a.label} type="button" onClick={() => onPick(a.prompt)}>
+        <Chip key={a.label} type="button" onClick={() => onPick(a.prompt, a.id)}>
           <Marker color={hueColor(a.hue, 0.7)} shape={a.shape} />
           {a.label}
         </Chip>

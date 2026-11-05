@@ -10,10 +10,10 @@ import { UserBubble } from './UserBubble';
 interface MessageListProps {
   messages: Message[];
   isTyping: boolean;
-  onLoadMore: (id: number) => void;
+  onReply: (text: string) => void;
 }
 
-export function MessageList({ messages, isTyping, onLoadMore }: MessageListProps) {
+export function MessageList({ messages, isTyping, onReply }: MessageListProps) {
   const { tm } = useTheme();
   return (
     <Box
@@ -28,12 +28,12 @@ export function MessageList({ messages, isTyping, onLoadMore }: MessageListProps
         gap: `${tm.layout.messageGap}px`,
       }}
     >
-      {messages.map((m) => (
+      {messages.map((m, i) => (
         <Box key={m.id} sx={{ animation: `${fadeUp} .45s ${tm.motion.spring} both` }}>
           {m.role === 'user' ? (
             <UserBubble text={m.text} />
           ) : (
-            <BotMessage reply={m} onLoadMore={onLoadMore} />
+            <BotMessage reply={m} isLatest={i === messages.length - 1 && !isTyping} onReply={onReply} />
           )}
         </Box>
       ))}

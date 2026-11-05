@@ -1,12 +1,10 @@
-export type ListKind = 'reminders' | 'expenses' | 'notes';
-
 export interface UserMessage {
   id: number;
   role: 'user';
   text: string;
 }
 
-/** Plain assistant text (e.g. an error or empty-list message). */
+/** Plain assistant text (e.g. a network or server error). */
 export interface TextReply {
   id: number;
   role: 'bot';
@@ -14,32 +12,59 @@ export interface TextReply {
   text: string;
 }
 
-export interface ListRow {
+/** A record row in a reply card. `position` is the number the user can refer to ("the second one"). */
+export interface ChatRecord {
+  position: number | null;
+  entity: string; // reminder | expense | note | category | month
+  id: number;
   title: string;
-  meta: string;
+  subtitle: string;
+  detail: string | null;
 }
 
-export interface ListPaging {
-  nextOffset: number;
-  total: number;
-  hasMore: boolean;
-  loading: boolean;
-  error?: string;
+export interface ChatCard {
+  title: string;
+  summary: string | null;
+  records: ChatRecord[];
 }
 
-/** Reminders / expenses / notes loaded from the API, page by page. */
-export interface ListReply {
+export interface ChatPart {
+  text: string;
+  card: ChatCard | null;
+}
+
+export interface ChatPending {
+  kind: 'info' | 'select' | 'confirm';
+  question: string;
+}
+
+/** One engine step, returned when the backend runs with CHAT_DEBUG=true. */
+export interface DebugStep {
+  step: string;
+  [detail: string]: unknown;
+}
+
+/** What POST /chat returns. */
+export interface ChatResponse {
+  conversation_id: number;
+  message_id: number;
+  type: string;
+  text: string;
+  parts: ChatPart[];
+  pending: ChatPending | null;
+  debug: DebugStep[] | null;
+}
+
+/** A reply from the chat engine. */
+export interface AssistantReply {
   id: number;
   role: 'bot';
-  kind: 'list';
-  listKind: ListKind;
-  text: string;
-  title: string;
-  summary: string;
-  rows: ListRow[];
-  hue: number;
-  paging: ListPaging;
+  kind: 'assistant';
+  type: string;
+  parts: ChatPart[];
+  pending: ChatPending | null;
+  debug: DebugStep[] | null;
 }
 
-export type BotReply = TextReply | ListReply;
+export type BotReply = TextReply | AssistantReply;
 export type Message = UserMessage | BotReply;
