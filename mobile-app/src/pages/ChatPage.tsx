@@ -60,7 +60,12 @@ export function ChatPage() {
         keyboardShouldPersistTaps="handled"
       >
         {hasMessages ? (
-          <MessageList messages={chat.messages} isTyping={chat.isTyping} onReply={(text) => void chat.send(text)} />
+          <MessageList
+            messages={chat.messages}
+            isTyping={chat.isTyping}
+            onReply={(text) => void chat.send(text)}
+            onShowAllExpenses={() => void chat.send('Show all my expenses', 'expenses_all')}
+          />
         ) : (
           <Greeting name={name ?? ''} />
         )}

@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
 import { devicesApi } from '../api/devices';
+import { expensesApi } from '../api/expenses';
 import { remindersApi } from '../api/reminders';
 
 /** Must match CHANNEL_ID in the backend's push_service.py. */
@@ -13,6 +14,9 @@ const CHANNEL_ID = 'reminders';
 /** Must match the category the backend's worker sends for one-off reminders: adds the Done button. */
 const REMINDER_CATEGORY = 'reminder';
 const DONE_ACTION = 'done';
+/** Must match EXPENSE_CATEGORY in the backend's sms_service.py: every bank payment push has this button. */
+const EXPENSE_CATEGORY = 'expense';
+const DONT_COUNT_ACTION = 'dont_count';
 const ACTION_TASK = 'taskmon-notification-action';
 /** The key useAuth saves the login token under (KEYS.token). */
 const SAVED_TOKEN_KEY = 'taskmon-token';
@@ -27,13 +31,21 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/** Done tapped: removes the notification and marks that reminder completed on the backend. */
+/** Done tapped: marks that reminder completed. Don't count tapped: leaves that payment out of totals and
+ * the daily budget. Either way the notification is removed. */
 async function handleAction(response: Notifications.NotificationResponse, token: string | null) {
-  if (response.actionIdentifier !== DONE_ACTION) return; // a tap on the notification itself just opens the app
+  const action = response.actionIdentifier;
+  if (action !== DONE_ACTION && action !== DONT_COUNT_ACTION) return; // a tap on the notification itself just opens the app
   const { identifier, content } = response.notification.request;
   await Notifications.dismissNotificationAsync(identifier);
-  const reminderId = Number(content.data?.reminder_id);
-  if (token && reminderId) await remindersApi.complete(token, reminderId);
+  if (!token) return;
+  if (action === DONE_ACTION) {
+    const reminderId = Number(content.data?.reminder_id);
+    if (reminderId) await remindersApi.complete(token, reminderId);
+  } else {
+    const expenseId = Number(content.data?.expense_id);
+    if (expenseId) await expensesApi.setCounted(token, expenseId, false);
+  }
 }
 
 // Done tapped while the app is in the background or closed: Android runs this task without opening the app.
@@ -50,7 +62,7 @@ let currentPushToken: string | null = null;
 export const getCurrentPushToken = () => currentPushToken;
 
 /**
- * Creates the "Reminders" channel and the Done button, asks for permission, and returns the FCM token.
+ * Creates the "Reminders" channel and the Done / Don't count buttons, asks for permission, and returns the FCM token.
  * Returns null if the user said no (or on iOS, which needs APNs set up first).
  */
 async function setUpPush(): Promise<string | null> {
@@ -63,6 +75,9 @@ async function setUpPush(): Promise<string | null> {
   });
   await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY, [
     { identifier: DONE_ACTION, buttonTitle: 'Done', options: { opensAppToForeground: false } },
+  ]);
+  await Notifications.setNotificationCategoryAsync(EXPENSE_CATEGORY, [
+    { identifier: DONT_COUNT_ACTION, buttonTitle: "Don't count", options: { opensAppToForeground: false } },
   ]);
 
   let { granted, canAskAgain } = await Notifications.getPermissionsAsync();

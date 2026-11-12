@@ -11,9 +11,10 @@ interface MessageListProps {
   messages: Message[];
   isTyping: boolean;
   onReply: (text: string) => void;
+  onShowAllExpenses: () => void;
 }
 
-export function MessageList({ messages, isTyping, onReply }: MessageListProps) {
+export function MessageList({ messages, isTyping, onReply, onShowAllExpenses }: MessageListProps) {
   const { width } = useWindowDimensions();
   return (
     <View
@@ -34,7 +35,12 @@ export function MessageList({ messages, isTyping, onReply }: MessageListProps) {
           {m.role === 'user' ? (
             <UserBubble text={m.text} />
           ) : (
-            <BotMessage reply={m} isLatest={i === messages.length - 1 && !isTyping} onReply={onReply} />
+            <BotMessage
+              reply={m}
+              isLatest={i === messages.length - 1 && !isTyping}
+              onReply={onReply}
+              onShowAllExpenses={onShowAllExpenses}
+            />
           )}
         </FadeUp>
       ))}

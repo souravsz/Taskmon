@@ -14,9 +14,11 @@ interface BotMessageProps {
   /** Only the newest reply's buttons (Yes / No, pick one) are active. */
   isLatest: boolean;
   onReply: (text: string) => void;
+  /** An expense list's Show all button (adds the Don't count expenses). */
+  onShowAllExpenses: () => void;
 }
 
-export function BotMessage({ reply, isLatest, onReply }: BotMessageProps) {
+export function BotMessage({ reply, isLatest, onReply, onShowAllExpenses }: BotMessageProps) {
   if (reply.kind === 'text') {
     return (
       <Row>
@@ -37,7 +39,13 @@ export function BotMessage({ reply, isLatest, onReply }: BotMessageProps) {
           <Text selectable style={textStyle}>
             {part.text}
           </Text>
-          {part.card && <ListCard card={part.card} onPick={part.card.records.some((r) => r.position) ? pick : undefined} />}
+          {part.card && (
+            <ListCard
+              card={part.card}
+              onPick={part.card.records.some((r) => r.position) ? pick : undefined}
+              onShowAll={onShowAllExpenses}
+            />
+          )}
         </View>
       ))}
 

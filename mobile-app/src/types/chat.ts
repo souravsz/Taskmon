@@ -20,12 +20,16 @@ export interface ChatRecord {
   title: string;
   subtitle: string;
   detail: string | null;
+  /** Expenses only: false after Don't count. Rows that have it get a Don't count / Count button. */
+  counted?: boolean | null;
 }
 
 export interface ChatCard {
   title: string;
   summary: string | null;
   records: ChatRecord[];
+  /** An expense list that left out Don't count expenses: shows a Show all button. */
+  show_all?: boolean;
 }
 
 export interface ChatPart {

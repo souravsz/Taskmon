@@ -6,8 +6,9 @@ export interface ChatRequest {
   conversation_id: number | null;
   /** Same id on a retry, so the backend answers from its stored reply instead of acting twice. */
   client_message_id: string;
-  /** Today / Reminders / Expenses / Notes button: the backend runs the list directly, without Groq. */
-  quick_action?: 'today' | 'reminders' | 'expenses' | 'notes';
+  /** Today / Reminders / Expenses / Notes button: the backend runs the list directly, without Groq.
+   * 'expenses_all' is an expense list's Show all button: it adds the expenses marked Don't count. */
+  quick_action?: 'today' | 'reminders' | 'expenses' | 'expenses_all' | 'notes';
 }
 
 /** Sends one message to the chat engine (Groq understands it; the backend validates and acts). */
