@@ -17,23 +17,44 @@ def money(value: object) -> Decimal:
     return Decimal(str(value or 0)).quantize(CENTS)
 
 
-def list_for_user(db: Session, user_id: int, params: PageParams) -> tuple[Sequence[Expense], int]:
-    """Most recent spending first."""
-    query = (
-        select(Expense).where(Expense.user_id == user_id).order_by(Expense.spent_at.desc(), Expense.id.desc())
-    )
-    return paginate(db, query, params)
+def list_for_user(
+    db: Session, user_id: int, params: PageParams, include_uncounted: bool = False
+) -> tuple[Sequence[Expense], int]:
+    """Most recent spending first. "Don't count" expenses only when asked for."""
+    query = select(Expense).where(Expense.user_id == user_id)
+    if not include_uncounted:
+        query = query.where(Expense.counted.is_(True))
+    return paginate(db, query.order_by(Expense.spent_at.desc(), Expense.id.desc()), params)
 
 
 def total_for_user(db: Session, user_id: int) -> Decimal:
-    total = db.scalar(select(func.sum(Expense.amount)).where(Expense.user_id == user_id))
+    total = db.scalar(
+        select(func.sum(Expense.amount)).where(Expense.user_id == user_id, Expense.counted.is_(True))
+    )
     return Decimal(total or 0).quantize(Decimal("0.01"))
 
 
+def get_for_user(db: Session, user_id: int, expense_id: int) -> Expense | None:
+    return db.scalar(select(Expense).where(Expense.id == expense_id, Expense.user_id == user_id))
+
+
+def set_counted(db: Session, expense: Expense, counted: bool) -> None:
+    """The "Don't count" / "Count" buttons: a not-counted expense is kept but left out of every total."""
+    expense.counted = counted
+    db.flush()
+
+
 def _in_range(
-    user_id: int, start: datetime | None, end: datetime | None, category: str | None = None
+    user_id: int,
+    start: datetime | None,
+    end: datetime | None,
+    category: str | None = None,
+    include_uncounted: bool = False,
 ) -> list[ColumnElement[bool]]:
+    """Totals, the daily budget and lists leave out "Don't count" expenses unless include_uncounted."""
     conditions: list[ColumnElement[bool]] = [Expense.user_id == user_id]
+    if not include_uncounted:
+        conditions.append(Expense.counted.is_(True))
     if start:
         conditions.append(Expense.spent_at >= start)
     if end:
@@ -56,15 +77,28 @@ def list_in_range(
     end: datetime | None = None,
     category: str | None = None,
     limit: int = 10,
+    include_uncounted: bool = False,
 ) -> tuple[list[Expense], int]:
-    query = select(Expense).where(*_in_range(user_id, start, end, category))
+    query = select(Expense).where(*_in_range(user_id, start, end, category, include_uncounted))
     rows, total = paginate(
         db, query.order_by(Expense.spent_at.desc(), Expense.id.desc()), PageParams(limit=limit, offset=0)
     )
     return list(rows), total
 
 
+def uncounted_in_range(
+    db: Session, user_id: int, start: datetime | None, end: datetime | None, category: str | None = None
+) -> int:
+    """How many "Don't count" expenses a counted-only list left out."""
+    conditions = [
+        *_in_range(user_id, start, end, category, include_uncounted=True),
+        Expense.counted.is_(False),
+    ]
+    return int(db.scalar(select(func.count(Expense.id)).where(*conditions)) or 0)
+
+
 def search(db: Session, user_id: int, text: str, limit: int = 10) -> list[Expense]:
+    """Every match, counted or not (the card marks the ones that aren't)."""
     query = _with_words(select(Expense).where(Expense.user_id == user_id), text)
     return list(db.scalars(query.order_by(Expense.spent_at.desc(), Expense.id.desc()).limit(limit)))
 

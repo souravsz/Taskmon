@@ -116,13 +116,16 @@ QUICK_ACTIONS = {
     "today": "list_reminders",
     "reminders": "list_reminders",
     "expenses": "list_expenses",
+    "expenses_all": "list_expenses",  # Show all: also the "Don't count" expenses
     "notes": "list_notes",
 }
 
 
 def quick_action_result(action: str, turn: Turn) -> ClassifierResult:
     today = turn.now.date().isoformat()
-    data = {"date_from": today, "date_to": today} if action == "today" else {}
+    data: dict[str, Any] = {"date_from": today, "date_to": today} if action == "today" else {}
+    if action == "expenses_all":
+        data["include_uncounted"] = True
     return ClassifierResult(type="QUERY", operations=[Operation(intent=QUICK_ACTIONS[action], data=data)])
 
 

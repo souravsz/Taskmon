@@ -99,14 +99,34 @@ async def run_query(turn: Turn, intent: Intent, values: dict[str, Any]) -> None:
     elif intent.id == "list_expenses":
         start, end, label = date_range(values, today)
         category = values.get("category")
-        rows, count = expense_service.list_in_range(db, uid, start, end, category, LIST_LIMIT)
-        total, _ = expense_service.total_in_range(db, uid, start, end, category)
-        turn.step("query.result", intent=intent.id, shown=len(rows), count=count, total=str(total))
+        show_all = values.get("include_uncounted", False)
+        rows, count = expense_service.list_in_range(db, uid, start, end, category, LIST_LIMIT, show_all)
+        total, _ = expense_service.total_in_range(db, uid, start, end, category)  # always counted only
+        hidden = 0 if show_all else expense_service.uncounted_in_range(db, uid, start, end, category)
+        turn.step(
+            "query.result", intent=intent.id, shown=len(rows), count=count, total=str(total), hidden=hidden
+        )
         what = f"{category} expenses" if category else "expenses"
-        if not rows:
+        summary = f"{inr(total)} total" + (f" · {hidden} not counted" if hidden else "")
+        if not rows and not hidden:
             turn.say(f"You have no {what}{label}.")
             return
-        turn.say(f"Here are your {what}{label}.", cards(rows), "Expenses", f"{inr(total)} total")
+        if not rows:  # everything here is marked "Don't count": the card still offers Show all
+            turn.say(f"You have no counted {what}{label}.", [], "Expenses", summary, show_all=True)
+            return
+        if show_all:
+            text = f"Here are all your {what}{label}, including ones you marked don't count."
+        elif hidden:
+            text = f"Here are your counted {what}{label}."
+        else:
+            text = f"Here are your {what}{label}."
+        turn.say(
+            text,
+            cards(rows),
+            "Expenses",
+            summary,
+            show_all=hidden > 0,
+        )
 
     elif intent.id == "search_expenses":
         rows = expense_service.search(db, uid, values["text"], LIST_LIMIT)
@@ -114,7 +134,7 @@ async def run_query(turn: Turn, intent: Intent, values: dict[str, Any]) -> None:
         if not rows:
             turn.say(f"No expenses match “{values['text']}”.")
             return
-        total = sum((r.amount for r in rows), Decimal(0))
+        total = sum((r.amount for r in rows if r.counted), Decimal(0))
         turn.say(f"Expenses matching “{values['text']}”:", cards(rows), "Expenses", f"{inr(total)} total")
 
     elif intent.id == "get_daily_expenses":

@@ -9,7 +9,8 @@ class ChatRequest(BaseModel):
     # Unique per message (e.g. a UUID). A retry with the same id gets the stored reply instead of running twice.
     client_message_id: str | None = Field(default=None, min_length=1, max_length=64)
     # A quick-action button (Today / Reminders / Expenses / Notes): runs the list directly, no Groq call
-    quick_action: Literal["today", "reminders", "expenses", "notes"] | None = None
+    # "expenses_all": the Show all button, which adds the "Don't count" expenses
+    quick_action: Literal["today", "reminders", "expenses", "expenses_all", "notes"] | None = None
 
 
 class ChatRecord(BaseModel):
@@ -19,12 +20,15 @@ class ChatRecord(BaseModel):
     title: str
     subtitle: str
     detail: str | None = None  # a note's full text, when asked for
+    counted: bool | None = None  # expenses only: False after "Don't count"; the app shows a toggle button
 
 
 class ChatCard(BaseModel):
     title: str
     summary: str | None
     records: list[ChatRecord]
+    # An expense list that left out "Don't count" expenses: the app shows a Show all button
+    show_all: bool = False
 
 
 class ChatPart(BaseModel):

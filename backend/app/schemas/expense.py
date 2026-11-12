@@ -15,7 +15,12 @@ class ExpenseRead(BaseModel):
     category: str
     description: str | None
     spent_at: datetime
+    counted: bool  # False after "Don't count": left out of totals and the daily budget
 
 
 class ExpensePage(Page[ExpenseRead]):
-    total_amount: Decimal
+    total_amount: Decimal  # counted expenses only
+
+
+class ExpenseCountedUpdate(BaseModel):
+    counted: bool

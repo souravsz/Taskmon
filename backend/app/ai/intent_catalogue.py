@@ -37,6 +37,7 @@ FIELD_FORMATS = {
     "month": "YYYY-MM",
     "compare_month": "YYYY-MM",
     "module": "reminders | expenses | notes",
+    "include_uncounted": "true to also show expenses marked don't count",
 }
 
 CATEGORIES = ("Food", "Transport", "Groceries", "Bills", "Shopping", "Health", "Entertainment", "Misc")
@@ -85,7 +86,7 @@ INTENTS: dict[str, Intent] = {
         Intent("delete_expense", "expenses", ACTION, "Delete one or all expenses",
                (), (), ("Delete my last expense",), needs_target=True, destructive=True),
         Intent("list_expenses", "expenses", QUERY, "List expenses, optionally by date range or category",
-               ("date_from", "date_to", "category"), (), ("Show my expenses today",)),
+               ("date_from", "date_to", "category", "include_uncounted"), (), ("Show my expenses today",)),
         Intent("search_expenses", "expenses", QUERY, "Find expenses by words in the description or category",
                ("text",), ("text",), ("Find my Uber expenses",)),
         Intent("get_daily_expenses", "expenses", QUERY, "Total spent on one day (defaults to today)",

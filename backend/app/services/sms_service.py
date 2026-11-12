@@ -122,8 +122,8 @@ def record(db: Session, user: User, text: str) -> SmsResult:
         over,
         is_today,
     )
-    if over and is_today and budget is not None:
-        warn_over_budget(db, user, debit, spent_today, budget)
+    if is_today:
+        notify_payment(db, user, expense, debit, spent_today, budget, over)
     return SmsResult(
         recorded=True,
         reason="recorded",
@@ -134,19 +134,50 @@ def record(db: Session, user: User, text: str) -> SmsResult:
     )
 
 
-def warn_over_budget(db: Session, user: User, debit: BankDebit, spent: Decimal, budget: Decimal) -> None:
-    """Push to every phone of the user. Never fails the request: the expense is already saved."""
-    title = "Daily budget exceeded"
-    text = f"You've spent {inr(spent)} today, over your {inr(budget)} budget. Last: {inr(debit.amount)} to {debit.recipient}."
-    data = {"type": "budget", "spent": str(spent), "budget": str(budget)}
+EXPENSE_CATEGORY = "expense"  # the app's notification category with the Don't count button
+
+
+def notify_payment(
+    db: Session,
+    user: User,
+    expense: Expense,
+    debit: BankDebit,
+    spent: Decimal,
+    budget: Decimal | None,
+    over: bool,
+) -> None:
+    """One push per payment, to every phone of the user, with a Don't count button. A payment that
+    passes the daily budget says so in the same push. Never fails the request: the expense is saved."""
+    if over and budget is not None:
+        title = "Daily budget exceeded"
+        text = (
+            f"You've spent {inr(spent)} today, over your {inr(budget)} budget. "
+            f"Last: {inr(debit.amount)} to {debit.recipient}."
+        )
+    else:
+        title = f"Paid {inr(debit.amount)} to {debit.recipient}"
+        text = f"Spent today: {inr(spent)}" + (f" of your {inr(budget)} budget." if budget else ".")
+    data = {
+        "type": "budget" if over else "expense",
+        "expense_id": str(expense.id),
+        "spent": str(spent),
+        "budget": str(budget) if budget is not None else "",
+    }
     try:
         tokens = device_service.tokens_for_user(db, user.id)
-        results = [push_service.send(token, title, text, data) for token in tokens]
+        results = [push_service.send(token, title, text, data, EXPENSE_CATEGORY) for token in tokens]
     except Exception:
-        logger.exception("Budget warning user=%s could not be sent", user.id)
+        logger.exception("Payment push user=%s expense=%s could not be sent", user.id, expense.id)
         return
     dead = [token for token, result in zip(tokens, results, strict=True) if result == "dead"]
     if dead:
         device_service.delete_tokens(db, dead)
         db.commit()
-    logger.info("Budget warning user=%s phones=%d sent=%d", user.id, len(tokens), results.count("sent"))
+    logger.info(
+        "Payment push user=%s expense=%s over=%s phones=%d sent=%d",
+        user.id,
+        expense.id,
+        over,
+        len(tokens),
+        results.count("sent"),
+    )

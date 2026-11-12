@@ -119,6 +119,8 @@ def validate(intent: Intent, data: dict[str, Any]) -> dict[str, Any]:
             if rec not in RECURRENCES:
                 raise Invalid((f,), QUESTIONS["recurrence"])
             values[f] = rec
+        elif f == "include_uncounted":
+            values[f] = raw is True or str(raw).strip().lower() in ("true", "yes", "1")
         elif f == "module":
             module = str(raw).strip().lower()
             if module in ENTITY:

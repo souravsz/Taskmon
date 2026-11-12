@@ -81,7 +81,18 @@ def record_card(record: Record, now: datetime, full: bool = False) -> dict[str, 
         subtitle = (
             f"{inr(record.amount)} · {record.category} · {day_label(record.spent_at.date(), now.date())}"
         )
+        if not record.counted:
+            subtitle += " · not counted"
         detail = None
+        # The app shows a Don't count / Count button on rows that have this
+        return {
+            "entity": "expense",
+            "id": record.id,
+            "title": title,
+            "subtitle": subtitle,
+            "detail": detail,
+            "counted": record.counted,
+        }
     else:
         content = record.content or ""
         title = record.title

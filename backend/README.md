@@ -139,10 +139,15 @@ Debited Rs 50.00 from a/c X9844 on 04Nov26 12:57 via UPI to SAFIYA HASSA. Ref 63
 
 → an expense of ₹50.00 on 2026-11-04 12:57, category `Misc`, description
 `UPI to SAFIYA HASSA · Federal Bank X9844`, `reference` 630830086298. The same reference is never recorded
-twice. If that day's total is now over the user's daily budget (`users.expense_limit`, set at every login),
-the API sends a "Daily budget exceeded" push to the user's phones. So the **API container needs the
-Firebase key too** (same mount as the worker). Without it the expense is still saved and the failure is
-logged.
+twice. For a payment made today, the API sends one push to the user's phones with a **Don't count** button
+("Paid ₹50 to SAFIYA HASSA"). If that day's total is now over the user's daily budget
+(`users.expense_limit`, set at every login), the same push says "Daily budget exceeded" instead. So the
+**API container needs the Firebase key too** (same mount as the worker). Without it the expense is still
+saved and the failure is logged.
+
+Don't count (the push button, or the button on each row of the app's expense list) sets
+`expenses.counted = false` through `PUT /api/v1/expenses/{id}/counted`. Not-counted expenses are kept, but
+left out of the daily budget, every chat total and the default lists. The app's Show all button lists them.
 
 ## Database tables
 

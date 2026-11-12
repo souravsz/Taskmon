@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Index, Integer, Numeric, String, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, UniqueConstraint, text, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -24,6 +24,8 @@ class Expense(UserOwnedMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # The bank's transaction reference, for expenses recorded from a bank SMS
     reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # False after "Don't count": kept, but left out of totals, the daily budget and the default list
+    counted: Mapped[bool] = mapped_column(Boolean, server_default=true(), default=True, nullable=False)
     spent_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=text("CURRENT_TIMESTAMP"), nullable=False
     )

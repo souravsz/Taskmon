@@ -118,7 +118,7 @@ def test_bank_sms_becomes_an_expense(client: TestClient, db_session: Session, pu
         "630830086298",
     )
     assert e.description == "UPI to SAFIYA HASSA · Federal Bank X9844"
-    assert pushes == []  # no budget set, so no warning
+    assert pushes == [("phone-1", "Paid ₹50 to SAFIYA HASSA", "Spent today: ₹50.")]  # no budget set
 
 
 def test_same_sms_twice_is_recorded_once(client: TestClient, db_session: Session, pushes: list) -> None:
@@ -165,7 +165,8 @@ def test_daily_budget_must_be_positive(client: TestClient, amount: object) -> No
 def test_over_budget_sends_a_warning(client: TestClient, db_session: Session, pushes: list) -> None:
     headers = logged_in(client, db_session, budget="80")
     first = client.post(f"{API}/sms/bank", json={"text": sms("50.00", ref="1")}, headers=headers).json()
-    assert first["over_budget"] is False and pushes == []
+    assert first["over_budget"] is False
+    assert pushes == [("phone-1", "Paid ₹50 to SAFIYA HASSA", "Spent today: ₹50 of your ₹80 budget.")]
 
     second = client.post(
         f"{API}/sms/bank", json={"text": sms("40.00", ref="2", to="CHAI POINT")}, headers=headers
@@ -173,7 +174,7 @@ def test_over_budget_sends_a_warning(client: TestClient, db_session: Session, pu
     body = second.json()
     assert body["over_budget"] is True
     assert Decimal(body["spent_today"]) == Decimal("90.00")
-    assert pushes == [
+    assert pushes[1:] == [
         (
             "phone-1",
             "Daily budget exceeded",

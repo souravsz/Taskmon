@@ -86,12 +86,14 @@ class Turn:
         title: str | None = None,
         summary: str | None = None,
         numbered: bool = True,
+        show_all: bool = False,
     ) -> None:
-        """Add a reply part. Numbered records become CONTEXT.last_shown_records ("the second one")."""
+        """Add a reply part. Numbered records become CONTEXT.last_shown_records ("the second one").
+        `show_all`: the card gets a Show all button (an expense list that hid "Don't count" ones)."""
         card = None
         if records is not None:
             rows = [{**r, "position": i if numbered else None} for i, r in enumerate(records, 1)]
-            card = {"title": title or "", "summary": summary, "records": rows}
+            card = {"title": title or "", "summary": summary, "records": rows, "show_all": show_all}
             if numbered and rows:
                 self.shown = rows
         self.parts.append({"text": text, "card": card})
